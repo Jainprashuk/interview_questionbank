@@ -180,16 +180,25 @@ function AuthShell({ children }) {
 
 function SignIn() {
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [isCreatingAccount, setIsCreatingAccount] = useState(false)
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const submit = async (event) => {
     event.preventDefault()
+    setMessage('')
     setSubmitting(true)
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } })
-    setMessage(error ? error.message : 'Check your email for a secure sign-in link.')
+    const { data, error } = isCreatingAccount
+      ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } })
+      : await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      setMessage(error.message)
+    } else if (isCreatingAccount && !data.session) {
+      setMessage('Account created. Confirm your email once, then sign in with your password.')
+    }
     setSubmitting(false)
   }
-  return <AuthShell><p className="auth-subtitle">Sign in to keep your progress synced across every device.</p><form onSubmit={submit}><label>Email address<input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label><button className="auth-button" disabled={submitting}>{submitting ? 'Sending link…' : 'Email me a sign-in link'}</button></form>{message && <p className="auth-message">{message}</p>}</AuthShell>
+  return <AuthShell><p className="auth-subtitle">{isCreatingAccount ? 'Create an account to keep your progress synced everywhere.' : 'Sign in to continue your synced preparation.'}</p><form onSubmit={submit}><label>Email address<input type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label><label className="password-label">Password<input type="password" required minLength="6" autoComplete={isCreatingAccount ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" /></label><button className="auth-button" disabled={submitting}>{submitting ? 'Please wait…' : isCreatingAccount ? 'Create account' : 'Sign in'}</button></form><button className="auth-switch" onClick={() => { setIsCreatingAccount(!isCreatingAccount); setMessage('') }}>{isCreatingAccount ? 'Already have an account? Sign in' : 'New here? Create an account'}</button>{message && <p className="auth-message">{message}</p>}</AuthShell>
 }
 
 function SetupScreen() {
