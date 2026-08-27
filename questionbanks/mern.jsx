@@ -595,32 +595,6 @@ export default function MernInterviewBank() {
     );
   }
 
-    useEffect(() => {
-    (async () => {
-      try {
-        const r = await window.storage.get(STORAGE_KEY);
-        if (r && r.value) setStatus(JSON.parse(r.value));
-      } catch (e) {
-        // no saved progress yet
-      }
-      setLoading(false);
-    })();
-  }, []);
-
-  useEffect(() => {
-    if (firstLoad.current) { firstLoad.current = false; return; }
-    if (loading) return;
-    setSaveState("saving");
-    (async () => {
-      try {
-        await window.storage.set(STORAGE_KEY, JSON.stringify(status));
-        setSaveState("saved");
-        setTimeout(() => setSaveState("idle"), 1200);
-      } catch (e) {
-        setSaveState("error");
-      }
-    })();
-  }, [status, loading]);
 
   return (
     <div className="min-h-screen w-full" style={{ backgroundColor: C.paper, color: C.ink }}>
