@@ -279,6 +279,36 @@
     margin-left:auto; font-family:var(--mono); font-size:10.8px; color:var(--text-faint); white-space:nowrap;
   }
 
+    /* ---------- Remarks ---------- */
+  .remarks{margin-top:14px; padding-top:14px; border-top:1px solid var(--border-soft);}
+  .remarks-label{
+    display:flex; align-items:center; gap:8px;
+    font-family:var(--mono); font-size:11px; color:var(--text-faint);
+    text-transform:uppercase; letter-spacing:0.08em; margin-bottom:8px;
+  }
+  .remarks-label .saved{
+    margin-left:auto; text-transform:none; letter-spacing:0; color:var(--accent);
+    opacity:0; transition:opacity .2s;
+  }
+  .remarks-label .saved.show{opacity:1;}
+  .remarks textarea{
+    width:100%; min-height:88px; resize:vertical;
+    background:var(--bg-alt); border:1px solid var(--border); border-radius:8px;
+    color:var(--text); font-family:var(--mono); font-size:12.6px; line-height:1.65;
+    padding:10px 12px;
+  }
+  .remarks textarea::placeholder{color:var(--text-faint);}
+  .remarks textarea:focus{border-color:var(--accent-dim); outline:none;}
+  .remarks-actions{display:flex; gap:8px; margin-top:8px;}
+  .remarks-btn{
+    padding:6px 12px; border-radius:7px; font-family:var(--mono); font-size:11.5px;
+    background:var(--accent-soft); border:1px solid var(--accent-dim); color:var(--accent); cursor:pointer;
+  }
+  .remarks-btn:hover{background:var(--accent-dim); color:#08120e;}
+  .remarks-btn.ghost{background:transparent; border:1px dashed var(--border); color:var(--text-faint);}
+  .remarks-btn.ghost:hover{color:var(--hot); border-color:var(--hot); background:transparent;}
+  .note-flag{flex:none; font-size:11px; opacity:0.85;}
+
   .empty-state{
     text-align:center; padding:70px 20px; color:var(--text-dim);
   }
@@ -428,17 +458,18 @@ const DATA = {"sections": [{"num": "1", "title": "Django Basics & Architecture",
   let filters = { section:'all', tag:'all', status:'all', q:'' };
   let saveTimer = null;
   let storageReady = false;
+  let notes = {};   // { qid: "my remark text" }
 
   // ---------- storage ----------
-  async function loadProgress(){
+   async function loadProgress(){
     try{
       const res = await window.storage.get('progress', false);
-      if(res && res.value){
-        progress = JSON.parse(res.value);
-      }
-    }catch(e){
-      progress = {};
-    }
+      if(res && res.value){ progress = JSON.parse(res.value); }
+    }catch(e){ progress = {}; }
+    try{
+      const res = await window.storage.get('remarks', false);
+      if(res && res.value){ notes = JSON.parse(res.value); }
+    }catch(e){ notes = {}; }
     storageReady = true;
     renderAll();
   }
@@ -451,6 +482,35 @@ const DATA = {"sections": [{"num": "1", "title": "Django Basics & Architecture",
         await window.storage.set('progress', JSON.stringify(progress), false);
       }catch(e){ /* the host app shows the sync error and keeps a local backup */ }
     })();
+  }
+
+    let notesSaveTimer = null;
+  function queueSaveNotes(){
+    if(notesSaveTimer) clearTimeout(notesSaveTimer);
+    notesSaveTimer = setTimeout(flushNotes, 500);
+  }
+  async function flushNotes(){
+    if(notesSaveTimer){ clearTimeout(notesSaveTimer); notesSaveTimer = null; }
+    try{ await window.storage.set('remarks', JSON.stringify(notes), false); }catch(e){}
+  }
+  function setNote(qid, text){
+    const v = (text || '').trim();
+    if(v) notes[qid] = v; else delete notes[qid];
+    queueSaveNotes();
+  }
+  function updateNoteFlag(qid){
+    const head = document.querySelector(`.card-head[data-id="${qid}"]`);
+    if(!head) return;
+    const existing = head.querySelector('.note-flag');
+    if(notes[qid] && !existing){
+      const span = document.createElement('span');
+      span.className = 'note-flag';
+      span.title = 'You have remarks on this question';
+      span.textContent = '📝';
+      head.insertBefore(span, head.querySelector('.status-dot'));
+    } else if(!notes[qid] && existing){
+      existing.remove();
+    }
   }
 
   function setStatus(qid, status){
@@ -477,7 +537,7 @@ const DATA = {"sections": [{"num": "1", "title": "Django Basics & Architecture",
   }
 
   function resetAll(){
-    if(!confirm(`Reset progress for all ${TOTAL} questions? This cannot be undone.`)) return;
+       if(!confirm(`Reset status for all ${TOTAL} questions? Your saved remarks will be kept. This cannot be undone.`)) return;
     progress = {};
     queueSave();
     renderAll();
@@ -505,6 +565,7 @@ const DATA = {"sections": [{"num": "1", "title": "Django Basics & Architecture",
 
   // ---------- filtering ----------
   function matches(q){
+    const hay = (q.title + ' ' + q.body + ' ' + (notes[q.id] || '')).toLowerCase();
     if(filters.section !== 'all' && q._section !== filters.section) return false;
     if(filters.tag !== 'all' && q.tag !== filters.tag) return false;
     if(filters.status !== 'all' && getStatus(q.id) !== filters.status) return false;
@@ -662,6 +723,39 @@ const DATA = {"sections": [{"num": "1", "title": "Django Basics & Architecture",
         setStatus(el.getAttribute('data-id'), el.getAttribute('data-status'));
       });
     });
+        container.querySelectorAll('textarea[data-note]').forEach(el=>{
+      const qid = el.getAttribute('data-note');
+      el.addEventListener('click', e=>e.stopPropagation());
+      el.addEventListener('input', ()=>setNote(qid, el.value));
+      el.addEventListener('blur', ()=>{ setNote(qid, el.value); flushNotes(); updateNoteFlag(qid); });
+    });
+    container.querySelectorAll('[data-note-save]').forEach(el=>{
+      el.addEventListener('click', async (e)=>{
+        e.stopPropagation();
+        const qid = el.getAttribute('data-note-save');
+        const ta = container.querySelector(`textarea[data-note="${qid}"]`);
+        setNote(qid, ta ? ta.value : '');
+        await flushNotes();
+        updateNoteFlag(qid);
+        const badge = container.querySelector(`[data-saved="${qid}"]`);
+        if(badge){ badge.classList.add('show'); setTimeout(()=>badge.classList.remove('show'), 1400); }
+        showToast(`${qid} → remark saved`);
+      });
+    });
+    container.querySelectorAll('[data-note-clear]').forEach(el=>{
+      el.addEventListener('click', async (e)=>{
+        e.stopPropagation();
+        const qid = el.getAttribute('data-note-clear');
+        const ta = container.querySelector(`textarea[data-note="${qid}"]`);
+        if(!notes[qid] && !(ta && ta.value)) return;
+        if(!confirm(`Clear your remark on ${qid}?`)) return;
+        if(ta) ta.value = '';
+        setNote(qid, '');
+        await flushNotes();
+        updateNoteFlag(qid);
+        showToast(`${qid} → remark cleared`);
+      });
+    });
     container.querySelectorAll('.card-body').forEach(el=>{
       el.addEventListener('click', (e)=>e.stopPropagation());
     });
@@ -688,6 +782,14 @@ const DATA = {"sections": [{"num": "1", "title": "Django Basics & Architecture",
           }).join('')}
           ${ts ? `<span class="log-line">[${ts}] status → ${status}</span>` : ''}
         </div>
+        <div class="remarks">
+          <div class="remarks-label">📝 my remarks <span class="saved" data-saved="${q.id}">saved</span></div>
+          <textarea data-note="${q.id}" placeholder="Your own explanation, a gotcha you hit at work, how you'd say this out loud…">${escapeHtml(notes[q.id] || '')}</textarea>
+          <div class="remarks-actions">
+            <button class="remarks-btn" data-note-save="${q.id}">Save remark</button>
+            <button class="remarks-btn ghost" data-note-clear="${q.id}">Clear</button>
+          </div>
+        </div>
       </div>`;
     }
     return `<div class="card ${expanded?'expanded':''}">
@@ -695,6 +797,7 @@ const DATA = {"sections": [{"num": "1", "title": "Django Basics & Architecture",
         <span class="qid">${q.id}</span>
         ${tagBadge}
         <span class="card-title">${escapeHtml(q.title)}</span>
+                ${notes[q.id] ? '<span class="note-flag" title="You have remarks on this question">📝</span>' : ''}
         <span class="status-dot ${status!=='new'?status:''}"></span>
         <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
       </div>
